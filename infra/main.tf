@@ -12,8 +12,39 @@ data "aws_ami" "al2023" {
   }
 }
 
+# The lease account has no default VPC.
+resource "aws_vpc" "lab" {
+  cidr_block = "10.42.0.0/16"
+  tags       = { Name = var.name }
+}
+
+resource "aws_internet_gateway" "lab" {
+  vpc_id = aws_vpc.lab.id
+}
+
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.lab.id
+  cidr_block              = "10.42.1.0/24"
+  availability_zone       = "${var.region}a"
+  map_public_ip_on_launch = true
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.lab.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.lab.id
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
 resource "aws_security_group" "web" {
-  name = "${var.name}-web"
+  name   = "${var.name}-web"
+  vpc_id = aws_vpc.lab.id
   ingress {
     from_port   = 3000
     to_port     = 3000
@@ -48,6 +79,7 @@ resource "aws_instance" "app" {
   ami                         = data.aws_ami.al2023.id
   instance_type               = "t3.small"
   associate_public_ip_address = true
+  subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.web.id]
   tags                        = { Name = var.name }
   user_data                   = <<-EOT
